@@ -1,0 +1,7 @@
+Convolutional Ladders in Tensorflow for NER
+Copyright 2018 Cristian Cardellino
+
+This software is based upon the following projects:
+- https://github.com/CuriousAI/ladder by Antti Rasmus (@arasmus)
+- https://github.com/rinuboney/ladder by Rinu Boney (@rinuboney)
+- https://github.com/Robileo/ladder_network by @Robileo
