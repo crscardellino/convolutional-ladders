@@ -27,17 +27,17 @@ def main(data_path, results_file, config):
     ####################################################################################
     # Inputs setup
     ####################################################################################
-    max_sentence_len = config['max_setence_len']
+    max_sentence_len = config['max_sentence_len']
 
     # feedforward_inputs (FFI): inputs for the feedforward network (i.e. the encoder).
     # Should contain the labeled training data (padded to max_sentence_len).
-    feedforward_inputs = tf.placeholder(tf.float32,
+    feedforward_inputs = tf.placeholder(tf.int32,
                                         shape=(None, max_sentence_len),
                                         name="FFI")
 
     # autoencoder_inputs (AEI): inputs for the autoencoder (encoder + decoder).
     # Should contain the unlabeled training data (also padded to max_sentence_len).
-    autoencoder_inputs = tf.placeholder(tf.float32,
+    autoencoder_inputs = tf.placeholder(tf.int32,
                                         shape=(None, max_sentence_len),
                                         name="AEI")
 
@@ -160,7 +160,7 @@ def main(data_path, results_file, config):
                 if layer_spec["type"] == "flat":
                     h = flat(h, output_name="h")
                 elif layer_spec["type"] == "max_pool":
-                    h = max_pool(h, output_name="h")
+                    h = max_pool(h, layer_spec, output_name="h")
                 else:
                     if i == L-1:
                         activation = tf.nn.softmax  # Only for the last layer
@@ -367,24 +367,8 @@ def main(data_path, results_file, config):
     print("Initial Supervised Cost for Validation Data: %.2f%%" % np.mean(mean_loss), file=sys.stderr)
 
     results_log.flush()
-    i_iter = 0
-    saver = tf.train.Saver()
-    checkpoint_dir = config["checkpoint_dir"]
-    ckpt = tf.train.get_checkpoint_state(checkpoint_dir)  # get latest checkpoint (if any)
-    if ckpt and ckpt.model_checkpoint_path:
-        # if checkpoint exists, restore the parameters and set epoch_n and i_iter
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        epoch_n = int(ckpt.model_checkpoint_path.split('-')[1])
-        i_iter = (epoch_n+1) * (num_examples//batch_size)
-        print("Restored Epoch %d" % epoch_n, file=sys.stderr)
-    else:
-        # no checkpoint exists. create checkpoints directory if it does not exist.
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
-        init = tf.global_variables_initializer()
-        sess.run(init)
 
-    for i in trange(i_iter, num_iter):
+    for i in trange(0, num_iter):
         labeled_instances, labels, unlabeled_instances = data.train.next_batch(batch_size)
 
         sess.run(train_step, feed_dict={feedforward_inputs: labeled_instances,
@@ -458,8 +442,6 @@ def main(data_path, results_file, config):
                 ratio = 1.0 * (num_epochs - (epoch_n+1))  # epoch_n + 1 because learning rate is set for next epoch
                 ratio = max(0, ratio / (num_epochs - decay_after))
                 sess.run(learning_rate.assign(starter_learning_rate * ratio))
-
-            saver.save(sess, checkpoint_dir + 'model.ckpt', epoch_n)
 
     print("=== Final stats ===", file=sys.stderr)
     epoch_n = num_iter//(num_examples//batch_size)
@@ -549,6 +531,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     with open(args.config, "r") as fh:
-        config = json.load(args)
+        config = json.load(fh)
 
     main(args.data_path, args.results_file, config)
