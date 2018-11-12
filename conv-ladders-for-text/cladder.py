@@ -328,8 +328,8 @@ def main(data_path, results_file, config):
         feed_dict={feedforward_inputs: data.train.labeled_ds.instances,
                    outputs: data.train.labeled_ds.labels,
                    training: False})
-    print("Initial Accuracy for Training Data: %.2f" % initial_stats[0], file=sys.stderr)
-    print("Initial Supervised Cost for Training Data: %.2f" % initial_stats[1], file=sys.stderr)
+    print("Initial Accuracy for Training Data: %.3g" % initial_stats[0], file=sys.stderr)
+    print("Initial Supervised Cost for Training Data: %.3g" % initial_stats[1], file=sys.stderr)
 
     true_labels = np.argmax(data.train.labeled_ds.labels, 1)
     for i in np.arange(true_labels.shape[0]):
@@ -365,8 +365,8 @@ def main(data_path, results_file, config):
                    true_labels[i],
                    initial_stats[2][i]), file=results_log)
 
-    print("Initial Accuracy for Validation Data: %.2f" % np.mean(mean_accuracy), file=sys.stderr)
-    print("Initial Supervised Cost for Validation Data: %.2f" % np.mean(mean_loss), file=sys.stderr)
+    print("Initial Accuracy for Validation Data: %.3g" % np.mean(mean_accuracy), file=sys.stderr)
+    print("Initial Supervised Cost for Validation Data: %.3g" % np.mean(mean_loss), file=sys.stderr)
 
     results_log.flush()
 
@@ -390,9 +390,9 @@ def main(data_path, results_file, config):
                            outputs: labels,
                            training: False})
 
-            tqdm.write("Epoch %d: Accuracy for Training Data: %.2f" %
+            tqdm.write("Epoch %d: Accuracy for Training Data: %.3g" %
                        (epoch_n, epoch_stats[0]), file=sys.stderr)
-            tqdm.write("Epoch %d: Supervised Cost for Training Data: %.2f" %
+            tqdm.write("Epoch %d: Supervised Cost for Training Data: %.3g" %
                        (epoch_n, epoch_stats[1]), file=sys.stderr)
 
             true_labels = np.argmax(labels, 1)
@@ -432,9 +432,9 @@ def main(data_path, results_file, config):
                            true_labels[i],
                            epoch_stats[2][i]), file=results_log)
 
-            tqdm.write("Epoch %d: Accuracy for Validation Data: %.2f" %
+            tqdm.write("Epoch %d: Accuracy for Validation Data: %.3g" %
                        (epoch_n, np.mean(mean_accuracy)), file=sys.stderr)
-            tqdm.write("Epoch %d: Supervised Cost for Validation Data: %.2f" %
+            tqdm.write("Epoch %d: Supervised Cost for Validation Data: %.3g" %
                        (epoch_n, np.mean(mean_loss)), file=sys.stderr)
 
             results_log.flush()
@@ -455,8 +455,8 @@ def main(data_path, results_file, config):
         feed_dict={feedforward_inputs: data.train.labeled_ds.instances,
                    outputs: data.train.labeled_ds.labels,
                    training: False})
-    print("Final Accuracy for Training Data: %.2f" % final_stats[0], file=sys.stderr)
-    print("Final Supervised Cost for Training Data: %.2f" % final_stats[1], file=sys.stderr)
+    print("Final Accuracy for Training Data: %.3g" % final_stats[0], file=sys.stderr)
+    print("Final Supervised Cost for Training Data: %.3g" % final_stats[1], file=sys.stderr)
 
     true_labels = np.argmax(data.train.labeled_ds.labels, 1)
     for i in np.arange(true_labels.shape[0]):
@@ -494,8 +494,8 @@ def main(data_path, results_file, config):
                    true_labels[i],
                    final_stats[2][i]), file=results_log)
 
-    print("Final Accuracy for Validation Data: %.2f" % np.mean(mean_accuracy), file=sys.stderr)
-    print("Final Supervised Cost for Validation Data: %.2f" % np.mean(mean_loss), file=sys.stderr)
+    print("Final Accuracy for Validation Data: %.3g" % np.mean(mean_accuracy), file=sys.stderr)
+    print("Final Supervised Cost for Validation Data: %.3g" % np.mean(mean_loss), file=sys.stderr)
 
     ### TEST DATA
 
