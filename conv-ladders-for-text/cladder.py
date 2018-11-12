@@ -15,7 +15,7 @@ from tqdm import tqdm, trange
 from utils import flat, max_pool, run_layer, run_transpose_layer
 
 
-def main(data_path, config):
+def main(data_path, results_file, config):
     ####################################################################################
     # Previous operations
     ####################################################################################
@@ -304,7 +304,6 @@ def main(data_path, config):
     data = input_data.read_data_sets(data_path,
                                      n_classes=config['num_classes'],
                                      n_labeled=config['num_labeled'],
-                                     one_hot=True,
                                      maxlen=max_sentence_len)
     num_examples = data.train.unlabeled_ds.instances.shape[0]
 
@@ -315,7 +314,7 @@ def main(data_path, config):
 
     print("===  Starting Session ===", file=sys.stderr)
     sess = tf.Session()
-    results_log = open(config["results_file"], "w")
+    results_log = open(results_file, "w")
     print("experiment,split,epoch,accuracy,lloss,true,pred", file=results_log)
 
     init = tf.global_variables_initializer()
@@ -545,10 +544,11 @@ def main(data_path, config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_path")
+    parser.add_argument("results_file")
     parser.add_argument("config")
 
     args = parser.parse_args()
     with open(args.config, "r") as fh:
         config = json.load(args)
 
-    main(args.data_path, config)
+    main(args.data_path, args.results_file, config)

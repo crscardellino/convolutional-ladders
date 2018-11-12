@@ -110,8 +110,7 @@ class SemiDataSet(object):
         return labeled_instances, labels, unlabeled_instances
 
 
-def read_data_sets(data_path, n_classes, n_labeled=100,
-                   fake_data=False, one_hot=True, maxlen=None):
+def read_data_sets(data_path, n_classes, n_labeled=100, fake_data=False, maxlen=None):
     class DataSets(object):
         pass
 
