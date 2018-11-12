@@ -78,7 +78,7 @@ def run_transpose_layer(x, layer_spec, output_name="inverse", output_shape=None)
         return a tensor whose shape is the same as the input of the layer
         """
     if layer_spec["type"] == "dense":
-        W = tf.get_variable("W", layer_spec["kernel_shape"][::-1],
+        W = tf.get_variable("W", layer_spec["shape"][::-1],
                             initializer=tf.random_normal_initializer())
         return tf.matmul(x, W, name=output_name)
         

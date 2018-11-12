@@ -23,7 +23,7 @@ class DataSet(object):
         if fake_data:
             self._num_examples = 1000
         else:
-            assert len(labels) > 0 or instances.shape[0] == labels.shape[0], (
+            assert len(labels) == 0 or instances.shape[0] == labels.shape[0], (
                     "images.shape: %s labels.shape: %s" % (instances.shape,
                                                            labels.shape))
             self._num_examples = instances.shape[0]
@@ -65,7 +65,8 @@ class DataSet(object):
             perm = np.arange(self._num_examples)
             np.random.shuffle(perm)
             self._instances = self._instances[perm]
-            self._labels = self._labels[perm]
+            if len(self._labels) > 0:
+                self._labels = self._labels[perm]
             # Start next epoch
             start = 0
             self._index_in_epoch = batch_size

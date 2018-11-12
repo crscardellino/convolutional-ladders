@@ -4,20 +4,19 @@
     {"name": "conv2", "type": "conv", "kernel_size": 2, "input_filters": 32, "output_filters": 16},
     {"name": "maxpool", "type": "max_pool", "pool_size": 2},
     {"name": "flat", "type": "flat"},
-    {"name": "dense1", "type": "dense", "shape": [16, 10]},
+    {"name": "dense1", "type": "dense", "shape": [640, 10]},
     {"name": "dense2", "type": "dense", "shape": [10, 2]}
   ],
   "max_sentence_len": 80,
   "embeddings_size": 50,
   "vocab_size": 5000,
   "noise_std": 0.3,
-  "denoising_cost": [100.0, 10.0, 0.1, 0.1, 0.1, 0.1],
+  "denoising_cost": [100.0, 10.0, 0.1, 0.1, 0.1, 0.1, 0.1],
   "starter_learning_rate": 0.02,
   "num_classes": 2,
   "num_labeled": 100,
   "batch_size": 100,
-  "num_epochs": 10,
+  "num_epochs": 3,
   "experiment_id": "hb01",
-  "checkpoint_dir": "./checkpoints",
   "decay_after": 5
 }

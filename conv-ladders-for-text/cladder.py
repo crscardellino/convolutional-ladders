@@ -177,14 +177,14 @@ def main(data_path, results_file, config):
 
     with tf.name_scope("FF_clean"):
         # output of the clean encoder. Used for prediction
-        FF_y = encoder(FFI_embeddings, 0, update_BN=True)
+        FF_y = encoder(FFI_embeddings, 0, update_BN=False)
     with tf.name_scope("FF_corrupted"):
         # output of the corrupted encoder. Used for training.
         FF_y_corr = encoder(FFI_embeddings, noise_std, update_BN=False)
 
     with tf.name_scope("AE_clean"):
         # corrupted encoding of unlabeled instances
-        AE_y = encoder(AEI_embeddings, 0, update_BN=False)
+        AE_y = encoder(AEI_embeddings, 0, update_BN=True)
     with tf.name_scope("AE_corrupted"):
         # corrupted encoding of unlabeled instances
         AE_y_corr = encoder(AEI_embeddings, noise_std, update_BN=False)
@@ -278,11 +278,13 @@ def main(data_path, results_file, config):
 
     u_cost = tf.add_n(d_cost)  # reconstruction cost
     corr_pred_cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(FF_y_corr), 1))  # supervised cost
+    clean_pred_cost = -tf.reduce_mean(tf.reduce_sum(outputs*tf.log(FF_y), 1))
 
     loss = corr_pred_cost + u_cost  # total cost
+
     predictions = tf.argmax(FF_y, 1)
     correct_prediction = tf.equal(predictions, tf.argmax(outputs, 1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * tf.constant(100.0)
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 
     # Optimization setting
     starter_learning_rate = config['starter_learning_rate']
@@ -322,12 +324,12 @@ def main(data_path, results_file, config):
 
     print("=== Initial stats ===", file=sys.stderr)
     initial_stats = sess.run(
-        [accuracy, corr_pred_cost, predictions],
+        [accuracy, clean_pred_cost, predictions],
         feed_dict={feedforward_inputs: data.train.labeled_ds.instances,
                    outputs: data.train.labeled_ds.labels,
                    training: False})
-    print("Initial Accuracy for Training Data: %.2f%%" % initial_stats[0], file=sys.stderr)
-    print("Initial Supervised Cost for Training Data: %.2f%%" % initial_stats[1], file=sys.stderr)
+    print("Initial Accuracy for Training Data: %.2f" % initial_stats[0], file=sys.stderr)
+    print("Initial Supervised Cost for Training Data: %.2f" % initial_stats[1], file=sys.stderr)
 
     true_labels = np.argmax(data.train.labeled_ds.labels, 1)
     for i in np.arange(true_labels.shape[0]):
@@ -347,7 +349,7 @@ def main(data_path, results_file, config):
     for start in trange(0, len(validation_labels), batch_size):
         end = min(start+batch_size, len(validation_labels))
         initial_stats = sess.run(
-            [accuracy, corr_pred_cost, predictions],
+            [accuracy, clean_pred_cost, predictions],
             feed_dict={feedforward_inputs: validation_instances[start:end],
                        outputs: validation_labels[start:end],
                        training: False})
@@ -363,11 +365,12 @@ def main(data_path, results_file, config):
                    true_labels[i],
                    initial_stats[2][i]), file=results_log)
 
-    print("Initial Accuracy for Validation Data: %.2f%%" % np.mean(mean_accuracy), file=sys.stderr)
-    print("Initial Supervised Cost for Validation Data: %.2f%%" % np.mean(mean_loss), file=sys.stderr)
+    print("Initial Accuracy for Validation Data: %.2f" % np.mean(mean_accuracy), file=sys.stderr)
+    print("Initial Supervised Cost for Validation Data: %.2f" % np.mean(mean_loss), file=sys.stderr)
 
     results_log.flush()
 
+    print("=== Training Start ===", file=sys.stderr)
     for i in trange(0, num_iter):
         labeled_instances, labels, unlabeled_instances = data.train.next_batch(batch_size)
 
@@ -378,17 +381,18 @@ def main(data_path, results_file, config):
 
         if (i > 1) and ((i+1) % (num_iter/num_epochs) == 0):
             # Compute train and validation stats for each epoch
-            epoch_n = i//(num_examples//batch_size)
+            epoch_n = i//(num_examples//batch_size) + 1
 
+            tqdm.write("=== Epoch %d stats ===" % epoch_n, file=sys.stderr)
             epoch_stats = sess.run(
-                [accuracy, corr_pred_cost, predictions],
+                [accuracy, clean_pred_cost, predictions],
                 feed_dict={feedforward_inputs: labeled_instances,
                            outputs: labels,
                            training: False})
 
-            tqdm.write("Epoch %d Accuracy for Training Data: %.2f%%" %
+            tqdm.write("Epoch %d: Accuracy for Training Data: %.2f" %
                        (epoch_n, epoch_stats[0]), file=sys.stderr)
-            tqdm.write("Epoch %d Supervised Cost for Training Data: %.2f%%" %
+            tqdm.write("Epoch %d: Supervised Cost for Training Data: %.2f" %
                        (epoch_n, epoch_stats[1]), file=sys.stderr)
 
             true_labels = np.argmax(labels, 1)
@@ -410,7 +414,7 @@ def main(data_path, results_file, config):
             for start in trange(0, len(validation_labels), batch_size):
                 end = min(start+batch_size, len(validation_labels))
                 epoch_stats = sess.run(
-                    [accuracy, corr_pred_cost, predictions],
+                    [accuracy, clean_pred_cost, predictions],
                     feed_dict={feedforward_inputs: validation_instances[start:end],
                                outputs: validation_labels[start:end],
                                training: False})
@@ -428,9 +432,9 @@ def main(data_path, results_file, config):
                            true_labels[i],
                            epoch_stats[2][i]), file=results_log)
 
-            tqdm.write("Epoch %d Accuracy for Validation Data: %.2f%%" %
+            tqdm.write("Epoch %d: Accuracy for Validation Data: %.2f" %
                        (epoch_n, np.mean(mean_accuracy)), file=sys.stderr)
-            tqdm.write("Epoch %d Supervised Cost for Validation Data: %.2f%%" %
+            tqdm.write("Epoch %d: Supervised Cost for Validation Data: %.2f" %
                        (epoch_n, np.mean(mean_loss)), file=sys.stderr)
 
             results_log.flush()
@@ -444,15 +448,15 @@ def main(data_path, results_file, config):
                 sess.run(learning_rate.assign(starter_learning_rate * ratio))
 
     print("=== Final stats ===", file=sys.stderr)
-    epoch_n = num_iter//(num_examples//batch_size)
+    epoch_n = num_iter//(num_examples//batch_size) + 1
 
     final_stats = sess.run(
-        [accuracy, corr_pred_cost, predictions],
+        [accuracy, clean_pred_cost, predictions],
         feed_dict={feedforward_inputs: data.train.labeled_ds.instances,
                    outputs: data.train.labeled_ds.labels,
                    training: False})
-    print("Final Accuracy for Training Data: %.2f%%" % final_stats[0], file=sys.stderr)
-    print("Final Supervised Cost for Training Data: %.2f%%" % final_stats[1], file=sys.stderr)
+    print("Final Accuracy for Training Data: %.2f" % final_stats[0], file=sys.stderr)
+    print("Final Supervised Cost for Training Data: %.2f" % final_stats[1], file=sys.stderr)
 
     true_labels = np.argmax(data.train.labeled_ds.labels, 1)
     for i in np.arange(true_labels.shape[0]):
@@ -473,12 +477,12 @@ def main(data_path, results_file, config):
     for start in trange(0, len(validation_labels), batch_size):
         end = min(start+batch_size, len(validation_labels))
         final_stats = sess.run(
-            [accuracy, corr_pred_cost, predictions],
+            [accuracy, clean_pred_cost, predictions],
             feed_dict={feedforward_inputs: validation_instances[start:end],
                        outputs: validation_labels[start:end],
                        training: False})
         mean_accuracy.append(final_stats[0])
-        mean_accuracy.append(final_stats[1])
+        mean_loss.append(final_stats[1])
 
         true_labels = np.argmax(validation_labels[start:end], 1)
         for i in np.arange(true_labels.shape[0]):
@@ -490,8 +494,8 @@ def main(data_path, results_file, config):
                    true_labels[i],
                    final_stats[2][i]), file=results_log)
 
-    print("Final Accuracy for Validation Data: %.2f%%" % np.mean(mean_accuracy), file=sys.stderr)
-    print("Final Supervised Cost for Validation Data: %.2f%%" % np.mean(mean_loss), file=sys.stderr)
+    print("Final Accuracy for Validation Data: %.2f" % np.mean(mean_accuracy), file=sys.stderr)
+    print("Final Supervised Cost for Validation Data: %.2f" % np.mean(mean_loss), file=sys.stderr)
 
     ### TEST DATA
 
@@ -501,7 +505,7 @@ def main(data_path, results_file, config):
     for start in trange(0, len(test_labels), batch_size):
         end = min(start+batch_size, len(test_labels))
         final_stats = sess.run(
-            [accuracy, corr_pred_cost, predictions],
+            [accuracy, clean_pred_cost, predictions],
             feed_dict={feedforward_inputs: test_instances[start:end],
                        outputs: test_labels[start:end],
                        training: False})

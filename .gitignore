@@ -106,3 +106,7 @@ venv.bak/
 # IntelliJ
 .idea/
 *.iml
+
+dataset/
+*.csv
+.*.swp
