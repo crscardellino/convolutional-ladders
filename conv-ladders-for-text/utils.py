@@ -39,7 +39,7 @@ def unpool(value, layer_spec, output_shape, name='unpool'):
         kernel_value = np.zeros((kernel_rows, kernel_cols,
                                  num_channels, num_channels),
                                 dtype=input_dtype_as_numpy)
-        kernel_value[0, 0, :, :] = np.eye(num_channels, num_channels)
+        kernel_value[:, :, :, :] = np.eye(num_channels, num_channels)
         kernel = tf.constant(kernel_value)
         
         # do the un-pooling using conv2d_transpose

@@ -70,7 +70,7 @@ class DataSet(object):
             # Start next epoch
             start = 0
             self._index_in_epoch = batch_size
-            assert batch_size <= self._num_examples
+            assert batch_size <= self._num_examples, "%d - %d" % (batch_size, self._num_examples)
         end = self._index_in_epoch
 
         if len(self._labels) > 0:

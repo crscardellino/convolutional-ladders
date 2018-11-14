@@ -53,9 +53,13 @@ def main(data_path, results_file, config):
     ####################################################################################
     embeddings_size = config['embeddings_size']
     vocab_size = config['vocab_size']
+
+    # Loading
+    embeddings_weights = np.load("/home/ccardellino/mirel/data/embeddings.npz")["embeddings"]
     embeddings_weights = tf.get_variable("embeddings",
-                                         (vocab_size, embeddings_size),
-                                         initializer=tf.random_normal_initializer())
+                                         embeddings_weights.shape,
+                                         initializer=tf.constant_initializer(embeddings_weights),
+                                         trainable=False)
     FFI_embeddings = tf.expand_dims(
         tf.nn.embedding_lookup(embeddings_weights, FFI),
         axis=1,
@@ -120,6 +124,7 @@ def main(data_path, results_file, config):
                 z = update_batch_normalization(z_pre)
             else:
                 z = batch_normalization(z_pre)
+
             return z
 
         def eval_batch_norm():
@@ -322,88 +327,53 @@ def main(data_path, results_file, config):
     init = tf.global_variables_initializer()
     sess.run(init)
 
-    print("=== Initial stats ===", file=sys.stderr)
-    initial_stats = sess.run(
-        [accuracy, clean_pred_cost, predictions],
-        feed_dict={feedforward_inputs: data.train.labeled_ds.instances,
-                   outputs: data.train.labeled_ds.labels,
-                   training: False})
-    print("Initial Accuracy for Training Data: %.3g" % initial_stats[0], file=sys.stderr)
-    print("Initial Supervised Cost for Training Data: %.3g" % initial_stats[1], file=sys.stderr)
-
-    true_labels = np.argmax(data.train.labeled_ds.labels, 1)
-    for i in np.arange(true_labels.shape[0]):
-        print("%s,training,0,%.3g,%.3g,%d,%d" %
-              (config["experiment_id"],
-               initial_stats[0],
-               initial_stats[1],
-               true_labels[i],
-               initial_stats[2][i]), file=results_log)
-
-    # For validation data we traverse in batches and save all the information
-    validation_instances = data.validation.instances
-    validation_labels = data.validation.labels
-    mean_accuracy = []
-    mean_loss = []
-
-    for start in trange(0, len(validation_labels), batch_size):
-        end = min(start+batch_size, len(validation_labels))
-        initial_stats = sess.run(
-            [accuracy, clean_pred_cost, predictions],
-            feed_dict={feedforward_inputs: validation_instances[start:end],
-                       outputs: validation_labels[start:end],
-                       training: False})
-        mean_accuracy.append(initial_stats[0])
-        mean_loss.append(initial_stats[1])
-
-        true_labels = np.argmax(validation_labels[start:end], 1)
-        for i in np.arange(true_labels.shape[0]):
-            print("%s,validation,0,%.3g,%.3g,%d,%d" %
-                  (config["experiment_id"],
-                   initial_stats[0],
-                   initial_stats[1],
-                   true_labels[i],
-                   initial_stats[2][i]), file=results_log)
-
-    print("Initial Accuracy for Validation Data: %.3g" % np.mean(mean_accuracy), file=sys.stderr)
-    print("Initial Supervised Cost for Validation Data: %.3g" % np.mean(mean_loss), file=sys.stderr)
-
-    results_log.flush()
-
     print("=== Training Start ===", file=sys.stderr)
-    for i in trange(0, num_iter):
+    tr = trange(0, num_iter, desc="iter: nan - loss: nan")
+    for i in tr:
         labeled_instances, labels, unlabeled_instances = data.train.next_batch(batch_size)
 
-        sess.run(train_step, feed_dict={feedforward_inputs: labeled_instances,
+        _, tloss, lloss = sess.run([train_step, loss, clean_pred_cost], feed_dict={feedforward_inputs: labeled_instances,
                                         outputs: labels,
                                         autoencoder_inputs: unlabeled_instances,
                                         training: True})
+        tr.set_description("loss: %.5g - lloss: %.5g" % (tloss, lloss))
 
-        if (i > 1) and ((i+1) % (num_iter/num_epochs) == 0):
+        if (i > 1) and ((i+1) % (num_iter/num_epochs) == 0) and i < num_iter-1:
             # Compute train and validation stats for each epoch
             epoch_n = i//(num_examples//batch_size) + 1
 
             tqdm.write("=== Epoch %d stats ===" % epoch_n, file=sys.stderr)
-            epoch_stats = sess.run(
-                [accuracy, clean_pred_cost, predictions],
-                feed_dict={feedforward_inputs: labeled_instances,
-                           outputs: labels,
-                           training: False})
+            # For training data we traverse in batches and save all the information
+            training_instances = data.train.labeled_ds.instances
+            training_labels = data.train.labeled_ds.labels
+            mean_accuracy = []
+            mean_loss = []
+
+            for start in trange(0, len(training_labels), batch_size):
+                end = min(start+batch_size, len(training_labels))
+                epoch_stats = sess.run(
+                    [accuracy, clean_pred_cost, predictions],
+                    feed_dict={feedforward_inputs: training_instances[start:end],
+                               outputs: training_labels[start:end],
+                               training: False})
+
+                mean_accuracy.append(epoch_stats[0])
+                mean_loss.append(epoch_stats[1])
+
+                true_labels = np.argmax(training_labels[start:end], 1)
+                for i in np.arange(true_labels.shape[0]):
+                    print("%s,training,%d,%.3g,%.3g,%d,%d" %
+                          (config["experiment_id"],
+                           epoch_n,
+                           epoch_stats[0],
+                           epoch_stats[1],
+                           true_labels[i],
+                           epoch_stats[2][i]), file=results_log)
 
             tqdm.write("Epoch %d: Accuracy for Training Data: %.3g" %
-                       (epoch_n, epoch_stats[0]), file=sys.stderr)
+                       (epoch_n, np.mean(mean_accuracy)), file=sys.stderr)
             tqdm.write("Epoch %d: Supervised Cost for Training Data: %.3g" %
-                       (epoch_n, epoch_stats[1]), file=sys.stderr)
-
-            true_labels = np.argmax(labels, 1)
-            for i in np.arange(true_labels.shape[0]):
-                print("%s,training,%d,%.3g,%.3g,%d,%d" %
-                      (config["experiment_id"],
-                       epoch_n,
-                       epoch_stats[0],
-                       epoch_stats[1],
-                       true_labels[i],
-                       epoch_stats[2][i]), file=results_log)
+                       (epoch_n, np.mean(mean_loss)), file=sys.stderr)
 
             # For validation data we traverse in batches and save all the information
             validation_instances = data.validation.instances
@@ -450,23 +420,34 @@ def main(data_path, results_file, config):
     print("=== Final stats ===", file=sys.stderr)
     epoch_n = num_iter//(num_examples//batch_size) + 1
 
-    final_stats = sess.run(
-        [accuracy, clean_pred_cost, predictions],
-        feed_dict={feedforward_inputs: data.train.labeled_ds.instances,
-                   outputs: data.train.labeled_ds.labels,
-                   training: False})
-    print("Final Accuracy for Training Data: %.3g" % final_stats[0], file=sys.stderr)
-    print("Final Supervised Cost for Training Data: %.3g" % final_stats[1], file=sys.stderr)
+    training_instances = data.train.labeled_ds.instances
+    training_labels = data.train.labeled_ds.labels
+    mean_accuracy = []
+    mean_loss = []
 
-    true_labels = np.argmax(data.train.labeled_ds.labels, 1)
-    for i in np.arange(true_labels.shape[0]):
-        print("%s,training,%d,%.3g,%.3g,%d,%d" %
-              (config["experiment_id"],
-               epoch_n,
-               final_stats[0],
-               final_stats[1],
-               true_labels[i],
-               final_stats[2][i]), file=results_log)
+    for start in trange(0, len(training_labels), batch_size):
+        end = min(start+batch_size, len(training_labels))
+        final_stats = sess.run(
+            [accuracy, clean_pred_cost, predictions],
+            feed_dict={feedforward_inputs: training_instances[start:end],
+                       outputs: training_labels[start:end],
+                       training: False})
+
+        mean_accuracy.append(final_stats[0])
+        mean_loss.append(final_stats[1])
+
+        true_labels = np.argmax(training_labels[start:end], 1)
+        for i in np.arange(true_labels.shape[0]):
+            print("%s,training,%d,%.3g,%.3g,%d,%d" %
+                  (config["experiment_id"],
+                   epoch_n,
+                   final_stats[0],
+                   final_stats[1],
+                   true_labels[i],
+                   final_stats[2][i]), file=results_log)
+
+    print("Final Accuracy for Training Data: %.3g" % np.mean(mean_accuracy), file=sys.stderr)
+    print("Final Supervised Cost for Training Data: %.3g" % np.mean(mean_loss), file=sys.stderr)
 
     # For validation data we traverse in batches and save all the information
     validation_instances = data.validation.instances

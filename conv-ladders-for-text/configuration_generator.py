@@ -6,6 +6,7 @@ from __future__ import absolute_import, print_function
 import argparse
 import json
 import math
+import os
 
 from hashlib import md5
 
@@ -46,7 +47,10 @@ if __name__ == "__main__":
                         default=10,
                         type=int)
     parser.add_argument("--batch-size",
-                        default=100,
+                        default=102,
+                        type=int)
+    parser.add_argument("--num-labeled",
+                        default=102,
                         type=int)
 
     args = parser.parse_args()
@@ -62,6 +66,7 @@ if __name__ == "__main__":
     decay_after = args.decay_after
     epochs = args.epochs
     batch_size = args.batch_size
+    num_labeled = args.num_labeled
     num_classes = args.num_classes
     assert num_classes is not None
     vocab_size = args.vocab_size
@@ -137,11 +142,15 @@ if __name__ == "__main__":
         starter_learning_rate=starter_learning_rate,
         decay_after=decay_after,
         num_classes=num_classes,
-        num_labeled=batch_size,
+        num_labeled=num_labeled,
         batch_size=batch_size,
         num_epochs=epochs
     )
     configuration["experiment_id"] = md5(configuration["hyperparameters"].encode("utf-8")).hexdigest()
 
-    with open("%s/%s.json" % (args.save_path, configuration["experiment_id"]), "w") as fh:
-        json.dump(configuration, fh)
+    if os.path.isdir(args.save_path):
+        with open("%s/%s.json" % (args.save_path, configuration["experiment_id"]), "w") as fh:
+            json.dump(configuration, fh)
+    else:
+        with open(args.save_path, "w") as fh:
+            json.dump(configuration, fh)
