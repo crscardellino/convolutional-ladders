@@ -12,15 +12,16 @@ import sys
 import tensorflow as tf
 
 from tqdm import tqdm, trange
-from utils import flat, max_pool, run_layer, run_transpose_layer
+from utils import flat, max_pool, run_transpose_layer
 
 
 def main(data_path, results_file, config):
     ####################################################################################
     # Previous operations
     ####################################################################################
-    layers = config['layers']
-    L = len(layers)
+    conv_kernels = config['conv_kernels']
+    conv_filters = config['conv_filters']
+    num_classes = config["num_classes"]
 
     tf.reset_default_graph()  # Clear the tensorflow graph (free reserved memory)
 
@@ -62,11 +63,11 @@ def main(data_path, results_file, config):
                                          trainable=False)
     FFI_embeddings = tf.expand_dims(
         tf.nn.embedding_lookup(embeddings_weights, FFI),
-        axis=1,
+        axis=-1,
         name="FFI_embeddings")
     AEI_embeddings = tf.expand_dims(
         tf.nn.embedding_lookup(embeddings_weights, AEI),
-        axis=1,
+        axis=-1,
         name="AEI_embeddings")
 
     ####################################################################################
@@ -108,10 +109,7 @@ def main(data_path, results_file, config):
     ####################################################################################
     # Encoder
     ####################################################################################
-    def encoder_bloc(h, layer_spec, noise_std, update_BN, activation):
-        # Run the layer
-        z_pre = run_layer(h, layer_spec, output_name="z_pre")
-
+    def encoder_layer(z_pre, noise_std, update_BN, activation):
         # Compute mean and variance of z_pre (to be used in the decoder)
         dim = len(z_pre.get_shape().as_list())
         mean, var = tf.nn.moments(z_pre, axes=list(range(0, dim-1)))
@@ -151,29 +149,44 @@ def main(data_path, results_file, config):
         h = activation(z*gamma + beta)
         return tf.identity(h, name="h")
 
-    def encoder(h, noise_std, update_BN):
+    def encoder(x, noise_std, update_BN):
         # Perform encoding for each layer
-        h += tf.random_normal(tf.shape(h)) * noise_std
-        h = tf.identity(h, "h0")
+        x += tf.random_normal(tf.shape(x)) * noise_std
+        x = tf.identity(x, "h0")
 
-        for i, layer_spec in enumerate(layers):
-            print("Building encoder layer %s for %s encoder" %
-                  (layer_spec["name"], "corrupted" if noise_std > 0 else "clean"),
-                  file=sys.stderr)
-            with tf.variable_scope("encoder_bloc_" + str(i+1), reuse=tf.AUTO_REUSE):
-                # Create an encoder bloc if the layer type is dense or conv2d
-                if layer_spec["type"] == "flat":
-                    h = flat(h, output_name="h")
-                elif layer_spec["type"] == "max_pool":
-                    h = max_pool(h, layer_spec, output_name="h")
-                else:
-                    if i == L-1:
-                        activation = tf.nn.softmax  # Only for the last layer
-                    else:
-                        activation = tf.nn.relu
-                    h = encoder_bloc(h, layer_spec, noise_std,
-                                     update_BN=update_BN,
-                                     activation=activation)
+        # Build the "wide" convolutional layer for each conv_kernel
+        # This is the "first" layer
+        conv_features = []
+        for i, ksize in enumerate(conv_kernels, start=1):
+            with tf.variable_scope("encoder_bloc_" + str(i), reuse=tf.AUTO_REUSE):
+                W = tf.get_variable("W",
+                        (ksize, embeddings_size, 1, conv_filters),
+                        initializer=tf.truncated_normal_initializer())
+                z_pre = tf.nn.conv2d(x, W, strides=[1,1,1,1],
+                        padding="VALID", name="z_pre")
+                h = encoder_layer(z_pre, noise_std, update_BN=update_BN,
+                                  activation=tf.nn.relu)
+                h = tf.nn.max_pool(h,
+                        ksize=[1, max_sentence_len - ksize + 1, 1, 1],
+                        strides=[1,1,1,1],
+                        padding="VALID",
+                        name="global_max_pool")
+                conv_features.append(h)
+
+        # Build the features layer ("second" layer)
+        total_kernels = len(conv_kernels)
+        total_conv_features = total_kernels * conv_filters
+        with tf.variable_scope("encoder_bloc_" + str(total_kernels+1), reuse=tf.AUTO_REUSE):
+            h = tf.concat(conv_features, 3)
+            h = tf.reshape(h, (-1, total_conv_features), name="h")
+
+        # Build the features to classes layer ("last" layer)
+        with tf.variable_scope("encoder_bloc_" + str(total_kernels+2), reuse=tf.AUTO_REUSE):
+            W = tf.get_variable("W", (total_conv_features, num_classes),
+                                initializer=tf.random_normal_initializer())
+            z_pre = tf.matmul(h, W, name="z_pre")
+            h = encoder_layer(z_pre, noise_std, update_BN=update_BN,
+                              activation=tf.nn.softmax)
 
         y = tf.identity(h, name="y")
         return y
@@ -224,20 +237,20 @@ def main(data_path, results_file, config):
             z_est = (z_c - mu) * v + mu
         return tf.identity(z_est, name=output_name)
 
-    def decoder_bloc(u, z_corr, mean, var, layer_spec=None):
-        # Performs the decoding operations of a corresponding encoder bloc
-        # Denoising
-        z_est = g_gauss(z_corr, u)
+    # def decoder_bloc(u, z_corr, mean, var, layer_spec=None):
+    #     # Performs the decoding operations of a corresponding encoder bloc
+    #     # Denoising
+    #     z_est = g_gauss(z_corr, u)
 
-        z_est_BN = (z_est - mean)/tf.sqrt(var + tf.constant(1e-10))
-        z_est_BN = tf.identity(z_est_BN, name="z_est_BN")
+    #     z_est_BN = (z_est - mean)/tf.sqrt(var + tf.constant(1e-10))
+    #     z_est_BN = tf.identity(z_est_BN, name="z_est_BN")
 
-        # run transposed layer
-        if layer_spec is not None:
-            u = run_transpose_layer(z_est, layer_spec)
-            u = batch_normalization(u, output_name="u")
+    #     # run transposed layer
+    #     if layer_spec is not None:
+    #         u = run_transpose_layer(z_est, layer_spec)
+    #         u = batch_normalization(u, output_name="u")
 
-        return u, z_est_BN
+    #     return u, z_est_BN
 
     def get_tensor(input_name, num_encoder_bloc, name_tensor):
         return tf.get_default_graph().\
@@ -247,35 +260,73 @@ def main(data_path, results_file, config):
     denoising_cost = config['denoising_cost']
     d_cost = []
     u = batch_normalization(AE_y_corr, output_name="u_L")
-    for i in range(L, 0, -1):
-        layer_spec = layers[i-1]
-        print("Building decoder layer %s" % layer_spec["name"], file=sys.stderr)
 
+    # Build first decoder layer (corresponding to the dense layer)
+    total_kernels = len(conv_kernels)
+    total_conv_features = total_kernels * conv_filters
+    with tf.variable_scope("decoder_bloc_" + str(total_kernels+2), reuse=tf.AUTO_REUSE):
+        z_corr = get_tensor("AE_corrupted", total_kernels+2, "z")
+        z = get_tensor("AE_clean", total_kernels+2, "z")
+        mean = get_tensor("AE_clean", total_kernels+2, "mean")
+        var = get_tensor("AE_clean", total_kernels+2, "var")
+        # Performs the decoding operations of a corresponding encoder bloc
+        # Denoising
+        z_est = g_gauss(z_corr, u)
+
+        z_est_BN = (z_est - mean)/tf.sqrt(var + tf.constant(1e-10))
+        z_est_BN = tf.identity(z_est_BN, name="z_est_BN")
+
+        # run decoder layer
+        V = tf.get_variable("V", (num_classes, total_conv_features),
+                            initializer=tf.random_normal_initializer())
+        u = tf.matmul(z_est, V)
+        u = batch_normalization(u, output_name="u")
+
+        d_cost.append((tf.reduce_mean(tf.square(z_est_BN - z))) * denoising_cost[2])
+
+    # Build second decoder layer (corresponding to the concatenation+flat layer)
+    with tf.variable_scope("decoder_bloc_" + str(total_kernels+1), reuse=tf.AUTO_REUSE):
+        u = tf.reshape(u, (-1, 1, 1, total_conv_features))
+        deconv_features = tf.split(u, total_kernels, axis=3)
+
+    # Build the final "wide convolutional" layer
+    deconv_layers = []
+    for i, gmp_layer in enumerate(deconv_features, start=1):
+        ksize = conv_kernels[i-1]
         with tf.variable_scope("decoder_bloc_" + str(i), reuse=tf.AUTO_REUSE):
-            if layer_spec["type"] in ["max_pool", "flat"]:
-                # if the layer is max pooling or "flat", the transposed layer is run
-                # without creating a decoder bloc.
-                h = get_tensor("AE_corrupted", i-1, "h")
-                output_shape = tf.shape(h)
-                u = run_transpose_layer(u, layer_spec, output_shape=output_shape)
-            else:
-                z_corr = get_tensor("AE_corrupted", i, "z")
-                z = get_tensor("AE_clean", i, "z")
-                mean = get_tensor("AE_clean", i, "mean")
-                var = get_tensor("AE_clean", i, "var")
+            u = tf.keras.layers.UpSampling2D(
+                    size=(max_sentence_len - ksize + 1, 1))(gmp_layer)
+ 
+            z_corr = get_tensor("AE_corrupted", i, "z")
+            z = get_tensor("AE_clean", i, "z")
+            mean = get_tensor("AE_clean", i, "mean")
+            var = get_tensor("AE_clean", i, "var")
+            z_est = g_gauss(z_corr, u)
 
-                u, z_est_BN = decoder_bloc(u, z_corr, mean, var,
-                                           layer_spec=layer_spec)
-                d_cost.append((tf.reduce_mean(tf.square(z_est_BN - z))) * denoising_cost[i])
+            z_est_BN = (z_est - mean)/tf.sqrt(var + tf.constant(1e-10))
+            z_est_BN = tf.identity(z_est_BN, name="z_est_BN")
+
+            # run deconvolutional (transposed convolution) layer
+            V = tf.get_variable("V",
+                    (ksize, embeddings_size, 1, conv_filters),
+                    initializer=tf.truncated_normal_initializer())
+
+            u = tf.nn.conv2d_transpose(z_est, V,
+                    output_shape=tf.shape(AEI_embeddings),
+                    strides=[1,1,1,1], padding='VALID')
+            u = batch_normalization(u, output_name="u")
+            deconv_layers.append(u)
+            d_cost.append((tf.reduce_mean(tf.square(z_est_BN - z))) * denoising_cost[1])
 
     # last decoding step
+    u = tf.concat(deconv_layers, 2)
     with tf.variable_scope("decoder_bloc_0", reuse=tf.AUTO_REUSE):
         z_corr = tf.get_default_graph().get_tensor_by_name("AE_corrupted/h0:0")
+        z_corr = tf.concat([z_corr] * total_kernels, 2)
         z = tf.get_default_graph().get_tensor_by_name("AE_clean/h0:0")
-        mean, var = tf.constant(0.0), tf.constant(1.0)
-
-        u, z_est_BN = decoder_bloc(u, z_corr, mean, var)
-        d_cost.append((tf.reduce_mean(tf.square(z_est_BN - z))) * denoising_cost[0])
+        z = tf.concat([z] * total_kernels, 2)
+        z_est = g_gauss(z_corr, u)
+        d_cost.append((tf.reduce_mean(tf.square(z_est - z))) * denoising_cost[0])
 
     ####################################################################################
     # Loss, accuracy and optimization
