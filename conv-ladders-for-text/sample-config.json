@@ -1,22 +1,24 @@
 {
-  "layers": [
-    {"name": "conv1", "type": "conv", "kernel_size": 2, "input_filters": 50, "output_filters": 32},
-    {"name": "conv2", "type": "conv", "kernel_size": 2, "input_filters": 32, "output_filters": 16},
-    {"name": "maxpool", "type": "max_pool", "pool_size": 2},
-    {"name": "flat", "type": "flat"},
-    {"name": "dense1", "type": "dense", "shape": [640, 10]},
-    {"name": "dense2", "type": "dense", "shape": [10, 2]}
-  ],
-  "max_sentence_len": 80,
-  "embeddings_size": 50,
-  "vocab_size": 5000,
-  "noise_std": 0.3,
-  "denoising_cost": [100.0, 10.0, 0.1, 0.1, 0.1, 0.1, 0.1],
-  "starter_learning_rate": 0.02,
-  "num_classes": 2,
-  "num_labeled": 100,
-  "batch_size": 100,
-  "num_epochs": 3,
-  "experiment_id": "hb01",
-  "decay_after": 5
+   "num_classes" : 6,
+   "denoising_cost" : [
+      1000,
+      10,
+      0.01
+   ],
+   "hyperparameters" : "conv:2:32-max_pool:2,128,16,200,10758,0.3,0.02,5,6,2048,100",
+   "noise_std" : 0.3,
+   "decay_after" : 5,
+   "experiment_id" : "0e0e6bea5b6a02b12e7767395a81bcf0",
+   "num_labeled" : 3000,
+   "embeddings_size" : 400,
+   "batch_size" : 128,
+   "num_epochs" : 10,
+   "max_sentence_len" : 20,
+   "starter_learning_rate" : 0.02,
+   "vocab_size" : 74832,
+   "conv_kernels": [2,3,4,5],
+   "conv_filters": 32,
+   "train_embeddings": true,
+   "lambda": 0.1,
+   "embeddings": "/home/ccardellino/mirel/data/wiki_embeddings.npz"
 }
